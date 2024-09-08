@@ -13,57 +13,71 @@ type Record struct {
 	High float64
 }
 
-// Compresser is responsible for calculating the price range (low-high) over a duration.
-type Compresser struct {
-	Duration time.Duration
+// Pusher is responsible for calculating the price range (low-high) over a duration.
+type Pusher struct {
+	Duration      time.Duration
+	SenderChannel chan map[string]Record
+}
+
+// PushRecords simulates sending the records to a destination (e.g., a message queue).
+func PushRecords(records map[string]Record) {
+	// Simulate pushing records (replace with actual implementation)
+	log.Printf("Pushing records: %v", records)
+}
+
+// StartPusher starts the pusher which processes messages from SenderChannel.
+func (p *Pusher) StartPusher(ctx context.Context) {
+	go func() {
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Context cancelled. Processing remaining records.")
+				for scrip := range p.SenderChannel {
+					PushRecords(scrip)
+				}
+				return
+			case scrips := <-p.SenderChannel:
+				PushRecords(scrips)
+			}
+		}
+	}()
 }
 
 // Start begins the compression process, calculating the low and high prices of coins over time.
-func (c *Compresser) Start(coins *sync.Map, ctx context.Context) {
+func (p *Pusher) StartCompressor(coins *sync.Map, ctx context.Context) {
 	go func() {
-		// Set up a ticker to trigger at intervals defined by c.Duration
-		ticker := time.NewTicker(c.Duration)
+		ticker := time.NewTicker(p.Duration)
 		defer ticker.Stop()
 
-		// Create a map to store the low-high records for each coin
 		scrips := make(map[string]Record)
 
 		for {
 			select {
 			case <-ticker.C:
-				// On each tick, print and reset the low-high records
-				log.Println("Low-High records:", scrips)
+				p.SenderChannel <- scrips
 				scrips = make(map[string]Record) // Reset after every tick
 			case <-ctx.Done():
-				// When the context is cancelled, stop the process
-				log.Println("Context cancelled, stopping Compresser")
+				log.Println("Context cancelled, stopping compressor")
+				close(p.SenderChannel)
 				return
-
 			default:
-				// Range over the sync.Map to process each coin and its price
 				coins.Range(func(key, value any) bool {
-					// Ensure the key is a string representing the coin name
 					coin, ok := key.(string)
 					if !ok {
-						log.Println("Invalid key type, expected string")
 						return true
 					}
-
-					// Ensure the value is a float64 representing the price
 					price, ok := value.(float64)
 					if !ok {
-						log.Println("Invalid value type, expected float64")
 						return true
 					}
 
-					// Get the current record for the coin, or initialize a new one
 					record, exists := scrips[coin]
 					if !exists {
 						scrips[coin] = Record{Low: price, High: price}
 						return true
 					}
 
-					// Update the low and high values based on the new price
 					if price < record.Low {
 						record.Low = price
 					}
@@ -71,7 +85,6 @@ func (c *Compresser) Start(coins *sync.Map, ctx context.Context) {
 						record.High = price
 					}
 
-					// Store the updated record in the scrips map
 					scrips[coin] = record
 					return true
 				})
