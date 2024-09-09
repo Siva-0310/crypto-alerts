@@ -5,12 +5,21 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+type Env struct {
+	Duration     time.Duration
+	WebsocketUrl string
+	RabbitString string
+	Queue        string
+	Concurrency  int
+}
 
 func createRabbitConn(connString string) *amqp.Connection {
 	var err error
@@ -29,12 +38,57 @@ func createRabbitConn(connString string) *amqp.Connection {
 	return nil
 }
 
+func GetEnv() *Env {
+	rabbitString, ok := os.LookupEnv("RABBIT")
+	if !ok {
+		log.Fatal("RABBIT environment variable is required")
+	}
+
+	queue, ok := os.LookupEnv("QUEUE")
+	if !ok {
+		log.Fatal("QUEUE environment variable is required")
+	}
+
+	concurrencyStr, ok := os.LookupEnv("CONCURRENCY")
+	if !ok {
+		log.Fatal("CONCURRENCY environment variable is required")
+	}
+	concurrency, err := strconv.Atoi(concurrencyStr)
+	if err != nil {
+		log.Fatalf("Invalid value for CONCURRENCY environment variable: %v", err)
+	}
+
+	durationStr, ok := os.LookupEnv("DURATION")
+	if !ok {
+		log.Fatal("DURATION environment variable is required")
+	}
+	duration, err := time.ParseDuration(durationStr)
+	if err != nil {
+		log.Fatalf("Invalid value for DURATION environment variable: %v", err)
+	}
+
+	websocketUrl, ok := os.LookupEnv("WEBSOCKET")
+	if !ok {
+		log.Fatal("WEBSOCKET environment variable is required")
+	}
+
+	return &Env{
+		Duration:     duration,
+		WebsocketUrl: websocketUrl,
+		RabbitString: rabbitString,
+		Queue:        queue,
+		Concurrency:  concurrency,
+	}
+}
+
 func main() {
 	// Initialize the context and cancel function
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rabbitConn := createRabbitConn("amqp://guest:guest@localhost:5672")
+	env := GetEnv()
+
+	rabbitConn := createRabbitConn(env.RabbitString)
 	defer rabbitConn.Close()
 
 	// Initialize the sync.Map to hold coin data
@@ -42,7 +96,7 @@ func main() {
 	wg := &sync.WaitGroup{}
 
 	// Start listening to WebSocket and handle incoming data
-	_, err := Listen("wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin", coins, wg, ctx)
+	_, err := Listen(env.WebsocketUrl, coins, wg, ctx)
 	if err != nil {
 		log.Fatalf("Error starting WebSocket listener: %v", err)
 	}
@@ -53,11 +107,11 @@ func main() {
 
 	// Create and start the Pusher
 	pusher := Pusher{
-		Duration:      5 * time.Second,
-		SenderChannel: make(chan map[string]Record, 100),
+		Duration:      env.Duration,
+		SenderChannel: make(chan map[string]Record),
 		Wg:            sync.WaitGroup{},
-		Concurrency:   5,
-		Queue:         "ticks",
+		Concurrency:   env.Concurrency,
+		Queue:         env.Queue,
 		RabbitConn:    rabbitConn,
 	}
 

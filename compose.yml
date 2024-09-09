@@ -1,0 +1,21 @@
+services:
+  rabbitmq:
+    image: rabbitmq:latest
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+  
+  ticker:
+    build: ./ticker
+    container_name: ticker
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBIT=amqp://user:password@rabbitmq
+      - QUEUE=ticks
+      - CONCURRENCY=5
+      - DURATION=5s
+      - WEBSOCKET=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin
