@@ -8,12 +8,33 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+func createRabbitConn(connString string) *amqp.Connection {
+	var err error
+	var conn *amqp.Connection
+
+	for i := 0; i < 5; i++ {
+		conn, err = amqp.Dial(connString)
+		if err == nil {
+			return conn
+		}
+		log.Printf("Failed to connect to RabbitMQ, attempt %d: %v\n", i+1, err)
+		time.Sleep(5 * time.Second)
+	}
+
+	log.Fatalf("Failed to connect to RabbitMQ after 5 attempts: %v", err)
+	return nil
+}
 
 func main() {
 	// Initialize the context and cancel function
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	rabbitConn := createRabbitConn("amqp://guest:guest@localhost:5672")
 
 	// Initialize the sync.Map to hold coin data
 	coins := &sync.Map{}
@@ -33,6 +54,10 @@ func main() {
 	pusher := Pusher{
 		Duration:      5 * time.Second,
 		SenderChannel: make(chan map[string]Record, 100),
+		Wg:            sync.WaitGroup{},
+		Concurrency:   5,
+		Queue:         "ticks",
+		RabbitConn:    rabbitConn,
 	}
 
 	log.Println("Starting compressor")
