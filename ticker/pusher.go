@@ -105,6 +105,10 @@ func (p *Pusher) StartPusher(wg *sync.WaitGroup, ctx context.Context) {
 					p.PushRecords(scrip)
 				}
 				p.Wg.Wait()
+				close(p.Sem)
+				for ch := range p.Sem {
+					ch.Close()
+				}
 				return
 			case scrips := <-p.SenderChannel:
 				p.PushRecords(scrips)

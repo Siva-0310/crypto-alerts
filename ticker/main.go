@@ -35,6 +35,7 @@ func main() {
 	defer cancel()
 
 	rabbitConn := createRabbitConn("amqp://guest:guest@localhost:5672")
+	defer rabbitConn.Close()
 
 	// Initialize the sync.Map to hold coin data
 	coins := &sync.Map{}
