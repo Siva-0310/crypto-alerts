@@ -26,9 +26,10 @@ func PushRecords(records map[string]Record) {
 }
 
 // StartPusher starts the pusher which processes messages from SenderChannel.
-func (p *Pusher) StartPusher(ctx context.Context) {
+func (p *Pusher) StartPusher(wg *sync.WaitGroup, ctx context.Context) {
+	wg.Add(1)
 	go func() {
-
+		defer wg.Done()
 		for {
 			select {
 			case <-ctx.Done():
@@ -45,10 +46,14 @@ func (p *Pusher) StartPusher(ctx context.Context) {
 }
 
 // Start begins the compression process, calculating the low and high prices of coins over time.
-func (p *Pusher) StartCompressor(coins *sync.Map, ctx context.Context) {
+func (p *Pusher) StartCompressor(coins *sync.Map, wg *sync.WaitGroup, ctx context.Context) {
+	wg.Add(1)
 	go func() {
 		ticker := time.NewTicker(p.Duration)
-		defer ticker.Stop()
+		defer func() {
+			ticker.Stop()
+			wg.Done()
+		}()
 
 		scrips := make(map[string]Record)
 

@@ -17,9 +17,10 @@ func main() {
 
 	// Initialize the sync.Map to hold coin data
 	coins := &sync.Map{}
+	wg := &sync.WaitGroup{}
 
 	// Start listening to WebSocket and handle incoming data
-	_, err := Listen("wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin", coins, ctx)
+	_, err := Listen("wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin", coins, wg, ctx)
 	if err != nil {
 		log.Fatalf("Error starting WebSocket listener: %v", err)
 	}
@@ -35,10 +36,10 @@ func main() {
 	}
 
 	log.Println("Starting compressor")
-	pusher.StartCompressor(coins, ctx)
+	pusher.StartCompressor(coins, wg, ctx)
 
 	log.Println("Starting pusher")
-	pusher.StartPusher(ctx)
+	pusher.StartPusher(wg, ctx)
 
 	// Wait for a signal to terminate
 	sig := <-sigs
@@ -47,5 +48,5 @@ func main() {
 	// Cancel context to stop processing
 	cancel()
 	log.Println("Context cancelled, shutting down")
-	time.Sleep(100 * time.Second)
+	wg.Wait()
 }

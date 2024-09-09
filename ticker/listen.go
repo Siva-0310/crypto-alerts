@@ -12,16 +12,21 @@ import (
 )
 
 // Listen connects to a WebSocket server and listens for incoming coin price updates.
-func Listen(url string, coins *sync.Map, ctx context.Context) (*websocket.Conn, error) {
+func Listen(url string, coins *sync.Map, wg *sync.WaitGroup, ctx context.Context) (*websocket.Conn, error) {
 	c, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	log.Println("WebSocket listener started")
+	wg.Add(1)
 
 	go func() {
-		defer c.Close()
+		defer func() {
+			c.Close()
+			wg.Done()
+		}()
+
 		for {
 			select {
 			case <-ctx.Done():
