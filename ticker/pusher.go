@@ -21,10 +21,12 @@ type Pusher struct {
 	Duration      time.Duration
 	SenderChannel chan map[string]Record
 	Sem           chan *amqp.Channel
+	Mu            sync.Mutex
 	Wg            sync.WaitGroup
 	Concurrency   int
 	RabbitConn    *amqp.Connection
 	Queue         string
+	RabbitString  string
 }
 
 func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
@@ -44,6 +46,44 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 	if err != nil {
 		log.Printf("Failed to marshal record for coin %s: %v", coin, err)
 		return
+	}
+
+	if ch.IsClosed() && !p.RabbitConn.IsClosed() {
+		ch, err = p.RabbitConn.Channel()
+		if err != nil {
+			log.Printf("Failed to create a new channel for coin %s: %v", coin, err)
+			return
+		}
+	} else if p.RabbitConn.IsClosed() {
+		p.Mu.Lock()
+
+		if p.RabbitConn.IsClosed() {
+
+			var (
+				err  error
+				conn *amqp.Connection
+			)
+			for i := 0; i < 5; i++ {
+				conn, err = amqp.Dial(p.RabbitString)
+				if err == nil {
+					p.RabbitConn = conn
+					break
+				}
+				log.Printf("Failed to reconnect to RabbitMQ (attempt %d): %v", i+1, err)
+				time.Sleep(5 * time.Second)
+			}
+			if err != nil {
+				log.Fatalf("Unable to reconnect to RabbitMQ after 5 attempts: %v", err)
+			}
+			p.RabbitConn = conn
+
+		}
+		p.Mu.Unlock()
+		ch, err = p.RabbitConn.Channel()
+		if err != nil {
+			log.Printf("Failed to recreate channel after reconnecting: %v", err)
+			return
+		}
 	}
 
 	// Publish the message to the specified queue
@@ -109,6 +149,7 @@ func (p *Pusher) StartPusher(wg *sync.WaitGroup, ctx context.Context) {
 				for ch := range p.Sem {
 					ch.Close()
 				}
+				p.RabbitConn.Close()
 				return
 			case scrips := <-p.SenderChannel:
 				p.PushRecords(scrips)

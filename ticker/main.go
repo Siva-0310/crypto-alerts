@@ -89,7 +89,6 @@ func main() {
 	env := GetEnv()
 
 	rabbitConn := createRabbitConn(env.RabbitString)
-	defer rabbitConn.Close()
 
 	// Initialize the sync.Map to hold coin data
 	coins := &sync.Map{}
@@ -113,6 +112,8 @@ func main() {
 		Concurrency:   env.Concurrency,
 		Queue:         env.Queue,
 		RabbitConn:    rabbitConn,
+		Mu:            sync.Mutex{},
+		RabbitString:  env.RabbitString,
 	}
 
 	log.Println("Starting compressor")
