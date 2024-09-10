@@ -21,21 +21,21 @@ type Env struct {
 	Concurrency  int
 }
 
-func createRabbitConn(connString string) *amqp.Connection {
-	var err error
-	var conn *amqp.Connection
+func CreateRabbitConn(connString string) (*amqp.Connection, error) {
+	var (
+		err  error
+		conn *amqp.Connection
+	)
 
 	for i := 0; i < 5; i++ {
 		conn, err = amqp.Dial(connString)
 		if err == nil {
-			return conn
+			return conn, nil
 		}
 		log.Printf("Failed to connect to RabbitMQ, attempt %d: %v\n", i+1, err)
-		time.Sleep(5 * time.Second)
+		time.Sleep((2 << i) * time.Second)
 	}
-
-	log.Fatalf("Failed to connect to RabbitMQ after 5 attempts: %v", err)
-	return nil
+	return nil, err
 }
 
 func GetEnv() *Env {
@@ -88,14 +88,17 @@ func main() {
 
 	env := GetEnv()
 
-	rabbitConn := createRabbitConn(env.RabbitString)
+	rabbitConn, err := CreateRabbitConn(env.RabbitString)
+	if err != nil {
+		log.Fatalf("Failed to create RabbitMQ connection: %v", err)
+	}
 
 	// Initialize the sync.Map to hold coin data
 	coins := &sync.Map{}
 	wg := &sync.WaitGroup{}
 
 	// Start listening to WebSocket and handle incoming data
-	_, err := Listen(env.WebsocketUrl, coins, wg, ctx)
+	_, err = Listen(env.WebsocketUrl, coins, wg, ctx)
 	if err != nil {
 		log.Fatalf("Error starting WebSocket listener: %v", err)
 	}

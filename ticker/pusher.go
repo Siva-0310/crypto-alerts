@@ -29,6 +29,22 @@ type Pusher struct {
 	RabbitString  string
 }
 
+func CreateChannel(conn *amqp.Connection, queue string) (*amqp.Channel, error) {
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+	_, err = ch.QueueDeclare(
+		queue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	return ch, err
+}
+
 func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 	defer func() {
 		// Ensure that the WaitGroup counter is decremented
@@ -49,7 +65,7 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 	}
 
 	if ch.IsClosed() && !p.RabbitConn.IsClosed() {
-		ch, err = p.RabbitConn.Channel()
+		ch, err = CreateChannel(p.RabbitConn, p.Queue)
 		if err != nil {
 			log.Printf("Failed to create a new channel for coin %s: %v", coin, err)
 			return
@@ -59,19 +75,7 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 
 		if p.RabbitConn.IsClosed() {
 
-			var (
-				err  error
-				conn *amqp.Connection
-			)
-			for i := 0; i < 5; i++ {
-				conn, err = amqp.Dial(p.RabbitString)
-				if err == nil {
-					p.RabbitConn = conn
-					break
-				}
-				log.Printf("Failed to reconnect to RabbitMQ (attempt %d): %v", i+1, err)
-				time.Sleep(5 * time.Second)
-			}
+			conn, err := CreateRabbitConn(p.RabbitString)
 			if err != nil {
 				log.Fatalf("Unable to reconnect to RabbitMQ after 5 attempts: %v", err)
 			}
@@ -79,7 +83,7 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 
 		}
 		p.Mu.Unlock()
-		ch, err = p.RabbitConn.Channel()
+		ch, err = CreateChannel(p.RabbitConn, p.Queue)
 		if err != nil {
 			log.Printf("Failed to recreate channel after reconnecting: %v", err)
 			return
@@ -114,19 +118,7 @@ func (p *Pusher) StartPusher(wg *sync.WaitGroup, ctx context.Context) {
 
 	p.Sem = make(chan *amqp.Channel, p.Concurrency)
 	for i := 0; i < p.Concurrency; i += 1 {
-		ch, err := p.RabbitConn.Channel()
-		if err != nil {
-			log.Fatalf("Error creating RabbitMQ channel: %v", err)
-			return
-		}
-		_, err = ch.QueueDeclare(
-			p.Queue,
-			true,
-			false,
-			false,
-			false,
-			nil,
-		)
+		ch, err := CreateChannel(p.RabbitConn, p.Queue)
 		if err != nil {
 			log.Fatalf("Error declaring queue: %v", err)
 			return
