@@ -99,7 +99,6 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 	if err != nil {
 		log.Printf("Failed to publish message for coin %s: %v", coin, err)
 	}
-	log.Printf("Successfully pushed message for coin %s", coin)
 
 }
 

@@ -97,8 +97,10 @@ func main() {
 	coins := &sync.Map{}
 	wg := &sync.WaitGroup{}
 
+	errsig := make(chan error, 1)
+
 	// Start listening to WebSocket and handle incoming data
-	_, err = Listen(env.WebsocketUrl, coins, wg, ctx)
+	_, err = Listen(env.WebsocketUrl, coins, wg, ctx, errsig)
 	if err != nil {
 		log.Fatalf("Error starting WebSocket listener: %v", err)
 	}
@@ -126,11 +128,15 @@ func main() {
 	pusher.StartPusher(wg, ctx)
 
 	// Wait for a signal to terminate
-	sig := <-sigs
-	log.Printf("Received signal: %v", sig)
+	select {
+	case sig := <-sigs:
+		log.Printf("Received signal: %v", sig)
+	case err := <-errsig:
+		log.Printf("Received error signal: %v", err)
+	}
 
-	// Cancel context to stop processing
 	cancel()
+
 	log.Println("Context cancelled, shutting down")
 	wg.Wait()
 }
