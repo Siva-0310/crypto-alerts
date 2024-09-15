@@ -19,3 +19,12 @@ services:
       - CONCURRENCY=5
       - DURATION=5s
       - WEBSOCKET=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin
+  
+  dispatcher:
+    build: ./dispatcher
+    container_name: dispatcher
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBIT=amqp://user:password@rabbitmq
+      - QUEUE=ticks
