@@ -1,6 +1,3 @@
--- Create the database
-CREATE DATABASE crypto;
-
 -- Connect to the crypto database
 \c crypto
 

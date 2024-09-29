@@ -1,6 +1,19 @@
 version: '3.8'  # Specify the version of Docker Compose
 
 services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=user           
+      - POSTGRES_PASSWORD=password    # Set your default PostgreSQL password
+      - POSTGRES_DB=crypto          # Set your default PostgreSQL database
+    volumes:
+      - postgres_data:/var/lib/postgresql/data 
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql 
+
   rabbitmq:
     image: rabbitmq:latest
     container_name: rabbitmq
@@ -23,7 +36,7 @@ services:
       - CONCURRENCY=5
       - DURATION=5s
       - WEBSOCKET=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin
-  
+
   dispatcher:
     build: ./dispatcher
     container_name: dispatcher
@@ -34,4 +47,5 @@ services:
       - QUEUE=ticks
 
 volumes:
-  rabbitmq_data:  # Define the volume
+  postgres_data:
+  rabbitmq_data:
