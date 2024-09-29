@@ -59,5 +59,5 @@ func main() {
 		log.Fatalf("Failed to create RabbitMQ connection: %v", err)
 	}
 
-	listen(rabbitConn, env.Queue, ctx)
+	listen(rabbitConn, env.Queue, env.RabbitString, ctx)
 }

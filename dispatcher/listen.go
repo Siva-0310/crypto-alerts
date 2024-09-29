@@ -25,17 +25,7 @@ func CreateChannel(conn *amqp.Connection, queue string) (*amqp.Channel, error) {
 	return ch, err
 }
 
-// listen listens to the specified RabbitMQ queue and processes messages
-func listen(conn *amqp.Connection, queue string, ctx context.Context) {
-	// Create a channel for consuming messages
-	ch, err := CreateChannel(conn, queue)
-	if err != nil {
-		log.Printf("Failed to create channel: %v", err)
-		return
-	}
-	defer ch.Close() // Ensure the channel is closed when done
-
-	// Start consuming messages from the queue
+func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error) {
 	deliveries, err := ch.Consume(
 		queue,        // Queue name
 		"dispatcher", // Consumer name
@@ -45,6 +35,21 @@ func listen(conn *amqp.Connection, queue string, ctx context.Context) {
 		false,        // No-wait
 		nil,          // Arguments
 	)
+	return deliveries, err
+}
+
+// listen listens to the specified RabbitMQ queue and processes messages
+func listen(conn *amqp.Connection, queue string, connString string, ctx context.Context) {
+	// Create a channel for consuming messages
+	ch, err := CreateChannel(conn, queue)
+	if err != nil {
+		log.Printf("Failed to create channel: %v", err)
+		return
+	}
+	defer ch.Close() // Ensure the channel is closed when done
+
+	// Start consuming messages from the queue
+	deliveries, err := CreateDelivary(ch, queue)
 	if err != nil {
 		log.Printf("Failed to register a consumer: %v", err)
 		return
@@ -56,8 +61,38 @@ func listen(conn *amqp.Connection, queue string, ctx context.Context) {
 			log.Println("Context cancelled, shutting down listener.")
 			return
 		case unmarshaltick := <-deliveries: // Process incoming message
+
+			if ch.IsClosed() && !conn.IsClosed() {
+				ch, err = CreateChannel(conn, queue)
+				if err != nil {
+					log.Printf("Failed to recreate channel after reconnecting: %v", err)
+					return
+				}
+				deliveries, err = CreateDelivary(ch, queue)
+				if err != nil {
+					log.Printf("Failed to register a consumer: %v", err)
+					return
+				}
+			} else if conn.IsClosed() {
+				conn, err = CreateRabbitConn(connString)
+				if err != nil {
+					log.Fatalf("Unable to reconnect to RabbitMQ after 5 attempts: %v", err)
+					return
+				}
+				ch, err = CreateChannel(conn, queue)
+				if err != nil {
+					log.Printf("Failed to recreate channel after reconnecting: %v", err)
+					return
+				}
+				deliveries, err = CreateDelivary(ch, queue)
+				if err != nil {
+					log.Printf("Failed to register a consumer: %v", err)
+					return
+				}
+			}
+
 			if unmarshaltick.ContentType != "application/json" {
-				log.Printf("Skipping non-JSON message with ContentType: %s", unmarshaltick.ContentType)
+				unmarshaltick.Nack(false, false)
 				continue
 			}
 

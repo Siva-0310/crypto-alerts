@@ -1,3 +1,5 @@
+version: '3.8'  # Specify the version of Docker Compose
+
 services:
   rabbitmq:
     image: rabbitmq:latest
@@ -7,7 +9,9 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=user
       - RABBITMQ_DEFAULT_PASS=password
-  
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq  # Volume for persisting RabbitMQ data
+
   ticker:
     build: ./ticker
     container_name: ticker
@@ -28,3 +32,6 @@ services:
     environment:
       - RABBIT=amqp://user:password@rabbitmq
       - QUEUE=ticks
+
+volumes:
+  rabbitmq_data:  # Define the volume
