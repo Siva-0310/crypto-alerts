@@ -39,7 +39,7 @@ func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error
 }
 
 // listen listens to the specified RabbitMQ queue and processes messages
-func listen(conn *amqp.Connection, queue string, connString string, ctx context.Context) {
+func listen(conn *amqp.Connection, queue string, connString string, ext chan map[string]interface{}, ctx context.Context) {
 	// Create a channel for consuming messages
 	ch, err := CreateChannel(conn, queue)
 	if err != nil {
@@ -103,9 +103,9 @@ func listen(conn *amqp.Connection, queue string, connString string, ctx context.
 				unmarshaltick.Nack(false, false) // Negatively acknowledge the message without requeueing
 				continue
 			}
+			// log.Println("in", tick)
 
-			// Log the message content
-			log.Printf("Received message: %v", tick)
+			ext <- tick
 
 			// Acknowledge the message after processing
 			if err := unmarshaltick.Ack(false); err != nil {
