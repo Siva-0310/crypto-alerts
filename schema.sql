@@ -4,7 +4,7 @@
 -- Create the users table
 CREATE TABLE users (
     id VARCHAR(128) PRIMARY KEY,
-    name VARCHAR(128) NOT NULL UNIQUE,
+    name VARCHAR(128) NOT NULL,
     email VARCHAR(128) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT NOW(),
     is_verified BOOLEAN DEFAULT FALSE

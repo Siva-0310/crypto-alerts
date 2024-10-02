@@ -45,6 +45,8 @@ services:
     environment:
       - RABBIT=amqp://user:password@rabbitmq
       - QUEUE=ticks
+      - CONCURRENCY=6
+      - POSTGRES=postgres://user:password@postgres/crypto
 
 volumes:
   postgres_data:
