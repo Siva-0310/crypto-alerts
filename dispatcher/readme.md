@@ -8,6 +8,7 @@ The Dispatcher service is a Go application designed to listen for cryptocurrency
 - **Alert Decision Making:** Evaluates incoming price ticks against predefined alert criteria to determine which alerts to dispatch.
 - **RabbitMQ Integration:** Utilizes RabbitMQ for reliable message handling and processing.
 - **Concurrency Support:** Processes multiple tick messages simultaneously to enhance performance.
+- **Duplicate Alert Prevention:** Utilizes Redis to ensure alerts are not sent to RabbitMQ if they already exist.
 
 ## Code Overview
 
@@ -44,6 +45,7 @@ The Dispatcher service requires the following environment variables to be set:
 - **`ALERT_QUEUE`**: The name of the RabbitMQ queue to which alerts will be sent (e.g., `alert_queue`).
 
 - **`CONCURRENCY`**: The number of concurrent goroutines to handle processing (e.g., `5`).
+- **`REDIS`**: The Redis connection string (e.g., `redis://user:password@localhost:6379/`).
 
 ## How to Run
 
