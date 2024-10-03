@@ -1,4 +1,4 @@
-version: '3.8'  # Specify the version of Docker Compose
+version: '3.8'
 
 services:
   postgres:
@@ -8,31 +8,44 @@ services:
       - "5432:5432"
     environment:
       - POSTGRES_USER=user           
-      - POSTGRES_PASSWORD=password    # Set your default PostgreSQL password
-      - POSTGRES_DB=crypto          # Set your default PostgreSQL database
+      - POSTGRES_PASSWORD=password    
+      - POSTGRES_DB=crypto            
     volumes:
       - postgres_data:/var/lib/postgresql/data 
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql 
 
-  rabbitmq:
+  tickmq:
     image: rabbitmq:latest
-    container_name: rabbitmq
+    container_name: tickmq
     ports:
       - "5672:5672"
     environment:
       - RABBITMQ_DEFAULT_USER=user
       - RABBITMQ_DEFAULT_PASS=password
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq  # Volume for persisting RabbitMQ data
+      - tickmq_data:/var/lib/rabbitmq  
+
+  alertmq:
+    image: rabbitmq:latest
+    container_name: alertmq
+    ports:
+      - "5673:5672"  
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    volumes:
+      - alertmq_data:/var/lib/rabbitmq  
 
   ticker:
     build: ./ticker
     container_name: ticker
     depends_on:
-      - rabbitmq
+      - tickmq
     environment:
-      - RABBIT=amqp://user:password@rabbitmq
+      - RABBIT=amqp://user:password@tickmq
       - QUEUE=ticks
+      - ALERT=amqp://user:password@alertmq
+      - ALERTQUEUE=alerts
       - CONCURRENCY=5
       - DURATION=5s
       - WEBSOCKET=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin
@@ -41,13 +54,17 @@ services:
     build: ./dispatcher
     container_name: dispatcher
     depends_on:
-      - rabbitmq
+      - postgres
+      - alertmq
     environment:
-      - RABBIT=amqp://user:password@rabbitmq
-      - QUEUE=ticks
+      - TICK=amqp://user:password@tickmq
+      - TICKQUEUE=ticks
+      - ALERT=amqp://user:password@alertmq
+      - ALERTQUEUE=alerts
       - CONCURRENCY=6
       - POSTGRES=postgres://user:password@postgres/crypto
 
 volumes:
   postgres_data:
-  rabbitmq_data:
+  tickmq_data:
+  alertmq_data:
