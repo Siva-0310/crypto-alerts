@@ -59,10 +59,14 @@ func listen(conn *amqp.Connection, queue string, connString string, ext chan map
 	wg.Add(1)
 	go func() {
 		defer func() {
-			ch.Close()
-			conn.Close()
+			if conn != nil && !conn.IsClosed() {
+				if !ch.IsClosed() {
+					ch.Close()
+				}
+				conn.Close()
+			}
 			wg.Done()
-			log.Println("listener shut down complete")
+			log.Println("listener is closed")
 
 		}()
 
