@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 )
 
 type Alert struct {
@@ -32,6 +34,7 @@ type Decider struct {
 	RabbitConn   *amqp091.Connection
 	Mu           *sync.Mutex
 	RabbitString string
+	RedisConn    *redis.Client
 }
 
 func (d *Decider) Coroutine(ch *amqp091.Channel, tick map[string]interface{}, ctx context.Context) {
@@ -94,6 +97,15 @@ func (d *Decider) Coroutine(ch *amqp091.Channel, tick map[string]interface{}, ct
 				return
 			}
 
+			_, err := d.RedisConn.Get(ctx, strconv.Itoa(alert.ID)).Result()
+			if err != nil && err != redis.Nil {
+				// Handle other types of errors (e.g., network issues)
+				log.Printf("Error fetching from Redis for alert ID %d: %v\n", alert.ID, err)
+				continue
+			} else if err == nil {
+				continue
+			}
+
 			marshalled, err := json.Marshal(alert)
 			if err != nil {
 				log.Printf("Failed to marshal alert ID %d for %s: %v", alert.ID, coin, err)
@@ -136,6 +148,10 @@ func (d *Decider) Coroutine(ch *amqp091.Channel, tick map[string]interface{}, ct
 				log.Printf("Failed to publish alert ID %d for %s: %v", alert.ID, coin, err)
 			}
 
+			err = d.RedisConn.Set(ctx, strconv.Itoa(alert.ID), "", 0).Err()
+			if err != nil {
+				log.Printf("Error setting alert ID %d in Redis: %v\n", alert.ID, err)
+			}
 			// Update lastID to the latest processed alert
 			lastID = alert.ID
 		}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -22,6 +23,7 @@ type Env struct {
 	AlertString    string
 	Concurrency    int
 	PostgresString string
+	RedisString    string
 }
 
 func CreateRabbitConn(connString string) (*amqp.Connection, error) {
@@ -40,6 +42,33 @@ func CreateRabbitConn(connString string) (*amqp.Connection, error) {
 		time.Sleep((2 << i) * time.Second)
 	}
 	return nil, err
+}
+
+func CreateRedisClient(con int, connString string) (*redis.Client, error) {
+	var (
+		err  error
+		conn *redis.Client
+	)
+
+	opt, err := redis.ParseURL(connString)
+	opt.PoolSize = 10
+
+	if err != nil {
+		return nil, err
+	}
+
+	conn = redis.NewClient(opt)
+
+	for i := 0; i < 5; i++ {
+		_, err = conn.Ping(context.Background()).Result() // Ping the Redis server
+		if err == nil {
+			return conn, nil
+		}
+		log.Printf("Failed to connect to Redis, attempt %d: %v\n", i+1, err)
+		time.Sleep((2 << i) * time.Second) // Exponential backoff
+	}
+
+	return nil, err // Return the last error after all attempts
 }
 
 func CreatePostgresPool(con int32, connString string) (*pgxpool.Pool, error) {
@@ -102,6 +131,11 @@ func GetEnv() *Env {
 		log.Fatal("POSTGRES environment variable is required")
 	}
 
+	redis, ok := os.LookupEnv("REDIS")
+	if !ok {
+		log.Fatalf("REDIS environment variable is required")
+	}
+
 	return &Env{
 		TickString:     tickString,
 		TickQueue:      tickQueue,
@@ -109,6 +143,7 @@ func GetEnv() *Env {
 		AlertString:    alertString,
 		Concurrency:    concurrency,
 		PostgresString: postgres,
+		RedisString:    redis,
 	}
 }
 
@@ -132,6 +167,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Postgres connection pool: %v", err)
 	}
+	defer pool.Close()
+
+	redisConn, err := CreateRedisClient(env.Concurrency, env.RedisString)
+	if err != nil {
+		log.Fatalf("Failed to create Redis connection: %v", err)
+	}
 
 	wg := &sync.WaitGroup{}
 
@@ -150,6 +191,7 @@ func main() {
 		RabbitConn:   alertConn,
 		RabbitString: env.AlertString,
 		Mu:           &sync.Mutex{},
+		RedisConn:    redisConn,
 	}
 
 	decider.Decide(wg, ctx)
