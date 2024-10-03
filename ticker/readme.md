@@ -61,4 +61,4 @@ The Ticker service requires the following environment variables to be set:
    ```
 ## Conclusion
 
-The Ticker service provides a reliable solution for monitoring cryptocurrency prices in real-time and compressing the data before sending it to RabbitMQ. Its design emphasizes performance and concurrency, making it suitable for high-availability applications in the cryptocurrency domain.
+The Ticker service provides a reliable solution for monitoring cryptocurrency prices in real-time and compressing the data before sending it to RabbitMQ.
