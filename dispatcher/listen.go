@@ -9,36 +9,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// CreateChannel creates a channel and declares a queue
-func CreateChannel(conn *amqp.Connection, queue string) (*amqp.Channel, error) {
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, err
-	}
-	_, err = ch.QueueDeclare(
-		queue, // Queue name
-		true,  // Durable
-		false, // Delete when unused
-		false, // Exclusive
-		false, // No-wait
-		nil,   // Arguments
-	)
-	return ch, err
-}
-
-func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error) {
-	deliveries, err := ch.Consume(
-		queue,        // Queue name
-		"dispatcher", // Consumer name
-		false,        // Auto-ack
-		false,        // Exclusive
-		false,        // No-local
-		false,        // No-wait
-		nil,          // Arguments
-	)
-	return deliveries, err
-}
-
 // listen listens to the specified RabbitMQ queue and processes messages
 func listen(conn *amqp.Connection, queue string, connString string, ext chan map[string]interface{}, wg *sync.WaitGroup, errsig chan error, ctx context.Context) {
 	// Create a channel for consuming messages
