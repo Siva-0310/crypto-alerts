@@ -52,7 +52,7 @@ func CreateRabbitConn(connString string) (*amqp.Connection, error) {
 		if err == nil {
 			return conn, nil
 		}
-		log.Printf("Failed to connect to TickMQ, attempt %d: %v\n", i+1, err)
+		log.Printf("Failed to connect to AlertMQ, attempt %d: %v\n", i+1, err)
 		time.Sleep((2 << i) * time.Second)
 	}
 	return nil, err
@@ -111,5 +111,6 @@ func CreateRedisClient(con int, connString string) (*redis.Client, error) {
 }
 
 func SendEmail(email string, alert *Alert) error {
+	log.Printf("Simulating sending email to: %s for alert ID: %d with price: %.2f", email, alert.ID, alert.Price)
 	return nil
 }

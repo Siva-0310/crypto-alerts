@@ -62,42 +62,37 @@ func main() {
 	defer cancel()
 
 	env := GetEnv()
+	listener := NewListener(env.AlertString, env.AlertQueue)
 
-	pool, err := CreatePostgresPool(int32(env.Concurrency), env.PostgresString)
-	if err != nil {
-		log.Fatalf("Failed to create Postgres connection pool: %v", err)
-	}
-	defer pool.Close()
+	global := NewGlobal(env.Concurrency, env.PostgresString, env.RedisString)
+	defer global.Close()
 
-	// redisConn, err := CreateRedisClient(env.Concurrency, env.RedisString)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create Redis connection: %v", err)
-	// }
-
-	// alertEmail := AlertEmail{
-	// 	Pool:        pool,
-	// 	RedisClient: redisConn,
-	// }
 	wg := &sync.WaitGroup{}
 
 	errsig := make(chan error, 1)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	listener := NewListener(env.AlertString, env.AlertQueue)
-	err = listener.Listen(Do, wg, errsig, ctx)
+	log.Println("Starting listener...")
+	err := listener.Listen(global.Do, wg, errsig, ctx)
 	if err != nil {
-		log.Fatal()
+		log.Fatalf("Failed to start listener: %v", err)
 	}
 
 	select {
 	case sig := <-sigs:
-		log.Printf("Received signal: %v", sig)
+		log.Printf("Received signal: %v, initiating shutdown...", sig)
 	case err := <-errsig:
-		log.Printf("Received error signal: %v", err)
+		log.Printf("Received error signal: %v, initiating shutdown...", err)
 	}
-	cancel()
 
-	log.Println("Context cancelled, shutting down")
+	cancel() // Cancelling context
+
+	log.Println("Closing global resources...")
+	global.Close()
+
+	log.Println("Waiting for all goroutines to finish...")
 	wg.Wait()
+
+	log.Println("All goroutines finished, shutting down.")
 }
