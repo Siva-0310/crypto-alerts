@@ -70,7 +70,20 @@ services:
       - CONCURRENCY=6
       - POSTGRES=postgres://user:password@postgres/crypto
       - REDIS=redis://:@redis:6379  # Redis connection URL
-
+  
+  notifier:
+    build:  ./notifier
+    container_name: notifier
+    depends_on:
+      - postgres
+      - alertmq
+      - redis
+    environment:
+      - ALERT=amqp://user:password@alertmq
+      - ALERTQUEUE=alerts
+      - CONCURRENCY=6
+      - POSTGRES=postgres://user:password@postgres/crypto
+      - REDIS=redis://:@redis:6379  # Redis connection URL
 volumes:
   postgres_data:
   tickmq_data:
