@@ -62,7 +62,7 @@ func main() {
 	defer cancel()
 
 	env := GetEnv()
-	listener := NewListener(env.AlertString, env.AlertQueue)
+	listener := NewListener("AlertMQ", env.AlertString, env.AlertQueue)
 
 	global := NewGlobal(env.Concurrency, env.PostgresString, env.RedisString)
 	defer global.Close()

@@ -27,7 +27,7 @@ func CreateChannel(conn *amqp.Connection, queue string) (*amqp.Channel, error) {
 	return ch, err
 }
 
-func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error) {
+func CreateDelivery(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error) {
 	deliveries, err := ch.Consume(
 		queue,        // Queue name
 		"dispatcher", // Consumer name
@@ -40,7 +40,7 @@ func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error
 	return deliveries, err
 }
 
-func CreateRabbitConn(connString string) (*amqp.Connection, error) {
+func CreateRabbitConn(service string, connString string) (*amqp.Connection, error) {
 	var (
 		err  error
 		conn *amqp.Connection
@@ -52,7 +52,32 @@ func CreateRabbitConn(connString string) (*amqp.Connection, error) {
 		if err == nil {
 			return conn, nil
 		}
-		log.Printf("Failed to connect to TickMQ, attempt %d: %v\n", i+1, err)
+		log.Printf("Failed to connect to %s, attempt %d: %v\n", service, i+1, err)
+		time.Sleep((2 << i) * time.Second)
+	}
+	return nil, err
+}
+
+func CreatePostgresPool(con int32, connString string) (*pgxpool.Pool, error) {
+	var (
+		err  error
+		pool *pgxpool.Pool
+	)
+
+	poolConfig, err := pgxpool.ParseConfig(connString)
+	if err != nil {
+		return nil, err
+	}
+	poolConfig.MaxConns = con
+	poolConfig.MinConns = con / 2
+	poolConfig.HealthCheckPeriod = time.Duration(15 * time.Minute)
+
+	for i := 0; i < 5; i++ {
+		pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
+		if err == nil && pool.Ping(context.Background()) == nil {
+			return pool, nil
+		}
+		log.Printf("Failed to connect to Postgres, attempt %d: %v\n", i+1, err)
 		time.Sleep((2 << i) * time.Second)
 	}
 	return nil, err
@@ -85,27 +110,7 @@ func CreateRedisClient(con int, connString string) (*redis.Client, error) {
 	return nil, err // Return the last error after all attempts
 }
 
-func CreatePostgresPool(con int32, connString string) (*pgxpool.Pool, error) {
-	var (
-		err  error
-		pool *pgxpool.Pool
-	)
-
-	poolConfig, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		return nil, err
-	}
-	poolConfig.MaxConns = con
-	poolConfig.MinConns = con / 2
-	poolConfig.HealthCheckPeriod = time.Duration(15 * time.Minute)
-
-	for i := 0; i < 5; i++ {
-		pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
-		if err == nil && pool.Ping(context.Background()) == nil {
-			return pool, nil
-		}
-		log.Printf("Failed to connect to Postgres, attempt %d: %v\n", i+1, err)
-		time.Sleep((2 << i) * time.Second)
-	}
-	return nil, err
+func SendEmail(email string, alert *Alert) error {
+	log.Printf("Simulating sending email to: %s for alert ID: %d with price: %.2f", email, alert.ID, alert.Price)
+	return nil
 }

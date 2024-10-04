@@ -21,18 +21,19 @@ type Env struct {
 	Concurrency  int
 }
 
-func CreateRabbitConn(connString string) (*amqp.Connection, error) {
+func CreateRabbitConn(service string, connString string) (*amqp.Connection, error) {
 	var (
 		err  error
 		conn *amqp.Connection
 	)
 
 	for i := 0; i < 5; i++ {
+		// Use TickMQ's connection function instead of RabbitMQ's
 		conn, err = amqp.Dial(connString)
 		if err == nil {
 			return conn, nil
 		}
-		log.Printf("Failed to connect to RabbitMQ, attempt %d: %v\n", i+1, err)
+		log.Printf("Failed to connect to %s, attempt %d: %v\n", service, i+1, err)
 		time.Sleep((2 << i) * time.Second)
 	}
 	return nil, err
@@ -88,7 +89,7 @@ func main() {
 
 	env := GetEnv()
 
-	rabbitConn, err := CreateRabbitConn(env.RabbitString)
+	rabbitConn, err := CreateRabbitConn("TickMQ", env.RabbitString)
 	if err != nil {
 		log.Fatalf("Failed to create RabbitMQ connection: %v", err)
 	}

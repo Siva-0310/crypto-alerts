@@ -75,7 +75,7 @@ func (p *Pusher) PushRecord(coin string, record Record, ch *amqp.Channel) {
 
 		if p.RabbitConn.IsClosed() {
 
-			conn, err := CreateRabbitConn(p.RabbitString)
+			conn, err := CreateRabbitConn("TickMQ", p.RabbitString)
 			if err != nil {
 				log.Fatalf("Unable to reconnect to RabbitMQ after 5 attempts: %v", err)
 			}

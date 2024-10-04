@@ -79,12 +79,7 @@ func main() {
 
 	env := GetEnv()
 
-	tickConn, err := CreateRabbitConn(env.TickString)
-	if err != nil {
-		log.Fatalf("Failed to create TickMQ connection: %v", err)
-	}
-
-	alertConn, err := CreateRabbitConn(env.AlertString)
+	alertConn, err := CreateRabbitConn("AlertMQ", env.AlertString)
 	if err != nil {
 		log.Fatalf("Failed to create AlertMQ connection: %v", err)
 	}
@@ -101,6 +96,7 @@ func main() {
 	}
 
 	wg := &sync.WaitGroup{}
+	listen := NewListener("TickMQ", env.TickString, env.TickQueue)
 
 	errsig := make(chan error, 1)
 	sigs := make(chan os.Signal, 1)
@@ -122,7 +118,7 @@ func main() {
 
 	decider.Decide(wg, ctx)
 
-	listen(tickConn, env.TickQueue, env.TickString, decider.In, wg, errsig, ctx)
+	listen.Listen(Do(decider.In), wg, errsig, ctx)
 
 	select {
 	case sig := <-sigs:

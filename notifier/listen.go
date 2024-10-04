@@ -9,6 +9,7 @@ import (
 )
 
 type Listener struct {
+	Service    string
 	conn       *amqp.Connection
 	ConnString string
 	Queue      string
@@ -16,8 +17,9 @@ type Listener struct {
 	deliveries <-chan amqp.Delivery // Corrected spelling and type
 }
 
-func NewListener(ConnString string, Queue string) *Listener {
+func NewListener(Service string, ConnString string, Queue string) *Listener {
 	return &Listener{
+		Service:    Service,
 		ConnString: ConnString,
 		Queue:      Queue,
 	}
@@ -39,7 +41,7 @@ func (l *Listener) CheckChan() error {
 		}
 		log.Printf("Successfully recreated AlertMQ channel")
 	} else if l.conn.IsClosed() {
-		l.conn, err = CreateRabbitConn(l.ConnString) // Assuming a function to create AlertMQ connection
+		l.conn, err = CreateRabbitConn(l.Service, l.ConnString) // Assuming a function to create AlertMQ connection
 		if err != nil {
 			return err
 		}
@@ -61,7 +63,7 @@ func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsi
 
 	var err error
 
-	l.conn, err = CreateRabbitConn(l.ConnString)
+	l.conn, err = CreateRabbitConn(l.Service, l.ConnString)
 	if err != nil {
 		return err
 	}
@@ -106,7 +108,6 @@ func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsi
 					if err := delivery.Nack(false, true); err != nil {
 						log.Printf("Failed to requeue AlertMQ message with ID '%s': %v", delivery.MessageId, err)
 					}
-					return // Exit the loop for this message
 				}
 
 				// Acknowledge the message after processing

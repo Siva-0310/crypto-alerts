@@ -40,7 +40,7 @@ func CreateDelivery(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error
 	return deliveries, err
 }
 
-func CreateRabbitConn(connString string) (*amqp.Connection, error) {
+func CreateRabbitConn(service string, connString string) (*amqp.Connection, error) {
 	var (
 		err  error
 		conn *amqp.Connection
@@ -52,7 +52,7 @@ func CreateRabbitConn(connString string) (*amqp.Connection, error) {
 		if err == nil {
 			return conn, nil
 		}
-		log.Printf("Failed to connect to AlertMQ, attempt %d: %v\n", i+1, err)
+		log.Printf("Failed to connect to %s, attempt %d: %v\n", service, i+1, err)
 		time.Sleep((2 << i) * time.Second)
 	}
 	return nil, err

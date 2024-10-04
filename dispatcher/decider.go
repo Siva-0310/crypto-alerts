@@ -123,7 +123,7 @@ func (d *Decider) Coroutine(ch *amqp091.Channel, tick map[string]interface{}, ct
 			} else if d.RabbitConn.IsClosed() {
 				d.Mu.Lock()
 				if d.RabbitConn.IsClosed() {
-					conn, err := CreateRabbitConn(d.RabbitString)
+					conn, err := CreateRabbitConn("AlertMQ", d.RabbitString)
 					if err != nil {
 						log.Fatalf("Failed to reconnect to AlertMQ for %s: %v", coin, err)
 					}
