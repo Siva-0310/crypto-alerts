@@ -149,31 +149,22 @@ func main() {
 	}
 	defer pool.Close()
 
-	// redisConn, err := CreateRedisClient(env.Concurrency, env.RedisString)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create Redis connection: %v", err)
-	// }
+	redisConn, err := CreateRedisClient(env.Concurrency, env.RedisString)
+	if err != nil {
+		log.Fatalf("Failed to create Redis connection: %v", err)
+	}
 
+	alertEmail := AlertEmail{
+		Pool:        pool,
+		RedisClient: redisConn,
+	}
 	wg := &sync.WaitGroup{}
 
 	errsig := make(chan error, 1)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	alertchan := make(chan *Alert)
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case alert := <-alertchan:
-				log.Println(alert)
-			}
-		}
-	}()
-
-	listen(alertConn, env.AlertQueue, env.AlertString, alertchan, wg, errsig, ctx)
+	listen(alertConn, env.AlertQueue, env.AlertString, wg, &alertEmail, errsig, ctx)
 
 	select {
 	case sig := <-sigs:

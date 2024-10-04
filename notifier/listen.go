@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 )
 
 type Alert struct {
@@ -18,6 +21,38 @@ type Alert struct {
 	IsAbove     bool      `json:"is_above"`     // Indicates if the alert is set for a price above or below.
 	Price       float64   `json:"price"`        // The price threshold for the alert.
 	UserID      string    `json:"user_id"`      // The user ID associated with the alert.
+}
+
+type AlertEmail struct {
+	Pool        *pgxpool.Pool
+	RedisClient *redis.Client
+}
+
+func (a *AlertEmail) Email(alert *Alert, ctx context.Context) {
+	var email string
+	err := a.Pool.QueryRow(ctx, "SELECT email FROM users WHERE id = $1", alert.UserID).Scan(&email)
+	if err != nil {
+		log.Printf("Failed to fetch email for user ID %s: %v", alert.UserID, err)
+		return
+	}
+
+	if sendErr := SendEmail(email, alert); sendErr != nil {
+		log.Printf("Failed to send email to %s for alert ID %d: %v", email, alert.ID, sendErr)
+		return
+	}
+	_, err = a.Pool.Exec(context.Background(), "UPDATE alerts SET is_triggered = TRUE WHERE id = $1", alert.ID)
+	if err != nil {
+		log.Printf("Failed to update alert ID %d in database: %v", alert.ID, err)
+		return
+	}
+
+	_, err = a.RedisClient.Del(context.Background(), strconv.Itoa(alert.ID)).Result()
+	if err != nil {
+		log.Printf("Failed to delete alert ID %d from Redis: %v", alert.ID, err)
+		return
+	}
+
+	log.Printf("Successfully sent email to %s for alert ID %d", email, alert.ID)
 }
 
 // CreateChannel creates a channel and declares a queue
@@ -51,7 +86,7 @@ func CreateDelivary(ch *amqp.Channel, queue string) (<-chan amqp.Delivery, error
 }
 
 // listen listens to the specified RabbitMQ queue and processes messages
-func listen(conn *amqp.Connection, queue string, connString string, ext chan *Alert, wg *sync.WaitGroup, errsig chan error, ctx context.Context) {
+func listen(conn *amqp.Connection, queue string, connString string, wg *sync.WaitGroup, a *AlertEmail, errsig chan error, ctx context.Context) {
 	// Create a channel for consuming messages
 	ch, err := CreateChannel(conn, queue)
 	if err != nil {
@@ -135,7 +170,7 @@ func listen(conn *amqp.Connection, queue string, connString string, ext chan *Al
 					continue
 				}
 
-				ext <- &alert
+				a.Email(&alert, ctx)
 
 				// Acknowledge the message after processing
 				if err := unmarshalalert.Ack(false); err != nil {
