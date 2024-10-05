@@ -59,7 +59,7 @@ func (l *Listener) CheckChan() error {
 	return nil
 }
 
-func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsig chan error, ctx context.Context) error {
+func (l *Listener) Listen(Do func(amqp.Delivery) (bool, bool), wg *sync.WaitGroup, errsig chan error, ctx context.Context) error {
 
 	var err error
 
@@ -67,6 +67,7 @@ func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsi
 	if err != nil {
 		return err
 	}
+
 	// Create a channel for consuming messages
 	l.ch, err = CreateChannel(l.conn, l.Queue)
 	if err != nil {
@@ -82,6 +83,7 @@ func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsi
 
 	go func() {
 		defer func() {
+			log.Println("closing")
 			l.Close()
 			wg.Done()
 			log.Println("Listener is closed")
@@ -100,20 +102,21 @@ func (l *Listener) Listen(Do func(amqp.Delivery) bool, wg *sync.WaitGroup, errsi
 				}
 
 				// Call the Do function to process the delivery
-				if !Do(delivery) {
-					// Log or handle failure to process delivery if necessary
-					log.Printf("Failed to process delivery with ID '%s', requeuing.", delivery.MessageId)
+				flag, requeue := Do(delivery)
 
+				if !flag {
+					// Log or handle failure to process delivery if necessary
 					// Nack the message and requeue it
-					if err := delivery.Nack(false, true); err != nil {
-						log.Printf("Failed to requeue AlertMQ message with ID '%s': %v", delivery.MessageId, err)
+					if err := delivery.Nack(false, requeue); err != nil {
+						log.Printf("Failed to requeue %s message with ID '%s': %v", l.Service, delivery.MessageId, err)
 					}
+					continue
 				}
 
 				// Acknowledge the message after processing
 				if err := delivery.Ack(false); err != nil { // Acknowledge message
-					log.Printf("Failed to acknowledge AlertMQ message with ID '%s': %v", delivery.MessageId, err)
-					return
+					log.Printf("Failed to acknowledge %s message with ID '%s': %v", l.Service, delivery.MessageId, err)
+					continue
 				}
 			}
 		}

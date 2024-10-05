@@ -47,17 +47,17 @@ func (g *Global) Close() {
 	g.RedisClient.Close()
 }
 
-func (g *Global) Do(delivery amqp.Delivery) bool {
+func (g *Global) Do(delivery amqp.Delivery) (bool, bool) {
 	if delivery.ContentType != "application/json" {
 		log.Printf("Received message with invalid content type '%s', NACKing: %s", delivery.ContentType, delivery.MessageId)
-		return false
+		return false, false
 	}
 
 	var alert Alert
 	err := json.Unmarshal(delivery.Body, &alert)
 	if err != nil {
 		log.Printf("Failed to unmarshal message body for ID '%s': %v", delivery.MessageId, err)
-		return false
+		return false, false
 	}
 
 	// Fetch the user's email from the database
@@ -65,7 +65,7 @@ func (g *Global) Do(delivery amqp.Delivery) bool {
 	err = g.Pool.QueryRow(context.Background(), "SELECT email FROM users WHERE id = $1", alert.UserID).Scan(&email)
 	if err != nil {
 		log.Printf("Failed to fetch email for user ID '%s': %v", alert.UserID, err)
-		return false
+		return false, true
 	}
 
 	// Send the alert email to the user
@@ -82,5 +82,5 @@ func (g *Global) Do(delivery amqp.Delivery) bool {
 	if err != nil {
 		log.Printf("Failed to delete alert ID '%d' from Redis: %v", alert.ID, err)
 	}
-	return true
+	return true, false
 }

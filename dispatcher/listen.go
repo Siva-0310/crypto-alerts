@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"sync"
 
@@ -19,11 +18,32 @@ type Listener struct {
 }
 
 func NewListener(Service string, ConnString string, Queue string) *Listener {
-	return &Listener{
+
+	l := &Listener{
 		Service:    Service,
 		ConnString: ConnString,
 		Queue:      Queue,
 	}
+
+	var err error
+
+	l.conn, err = CreateRabbitConn(l.Service, l.ConnString)
+	if err != nil {
+		log.Fatalf("Failed to create RabbitMQ connection: %v", err)
+	}
+
+	// Create a channel for consuming messages
+	l.ch, err = CreateChannel(l.conn, l.Queue)
+	if err != nil {
+		log.Fatalf("Failed to create channel: %v", err)
+	}
+
+	l.deliveries, err = CreateDelivery(l.ch, l.Queue)
+	if err != nil {
+		log.Fatalf("Failed to create deliveries: %v", err)
+	}
+
+	return l
 }
 
 func (l *Listener) CheckChan() error {
@@ -60,28 +80,11 @@ func (l *Listener) CheckChan() error {
 	return nil
 }
 
-func (l *Listener) Listen(Do func(amqp.Delivery) (bool, bool), wg *sync.WaitGroup, errsig chan error, ctx context.Context) error {
-
-	var err error
-
-	l.conn, err = CreateRabbitConn(l.Service, l.ConnString)
-	if err != nil {
-		return err
-	}
-
-	// Create a channel for consuming messages
-	l.ch, err = CreateChannel(l.conn, l.Queue)
-	if err != nil {
-		return err
-	}
-
-	l.deliveries, err = CreateDelivery(l.ch, l.Queue)
-	if err != nil {
-		return err
-	}
+func (l *Listener) Listen(Do func(amqp.Delivery) (bool, bool), wg *sync.WaitGroup, errsig chan error, ctx context.Context) {
 
 	wg.Add(1)
 
+	log.Println("listener Started")
 	go func() {
 		defer func() {
 			log.Println("closing")
@@ -122,7 +125,6 @@ func (l *Listener) Listen(Do func(amqp.Delivery) (bool, bool), wg *sync.WaitGrou
 			}
 		}
 	}()
-	return nil
 }
 
 func (l *Listener) Close() {
@@ -131,19 +133,5 @@ func (l *Listener) Close() {
 			l.ch.Close()
 		}
 		l.conn.Close()
-	}
-}
-
-func Do(ext chan map[string]interface{}) func(amqp.Delivery) (bool, bool) {
-	return func(d amqp.Delivery) (bool, bool) {
-		var tick map[string]interface{}
-		// Unmarshal the JSON message
-		if err := json.Unmarshal(d.Body, &tick); err != nil {
-			log.Printf("Failed to unmarshal TickMQ message with ID '%s': %v", d.MessageId, err)
-			return false, false
-		}
-
-		ext <- tick
-		return true, false
 	}
 }

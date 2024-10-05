@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Env struct {
@@ -79,46 +77,20 @@ func main() {
 
 	env := GetEnv()
 
-	alertConn, err := CreateRabbitConn("AlertMQ", env.AlertString)
-	if err != nil {
-		log.Fatalf("Failed to create AlertMQ connection: %v", err)
-	}
-
-	pool, err := CreatePostgresPool(int32(env.Concurrency), env.PostgresString)
-	if err != nil {
-		log.Fatalf("Failed to create Postgres connection pool: %v", err)
-	}
-	defer pool.Close()
-
-	redisConn, err := CreateRedisClient(env.Concurrency, env.RedisString)
-	if err != nil {
-		log.Fatalf("Failed to create Redis connection: %v", err)
-	}
-
 	wg := &sync.WaitGroup{}
+
+	ext := make(chan *Alert)
+
 	listen := NewListener("TickMQ", env.TickString, env.TickQueue)
+	global := NewGlobal(1000, env.Concurrency, ext, env.PostgresString)
+	pusher := NewPusher(env.AlertQueue, env.AlertString, env.Concurrency, env.RedisString, ext)
 
 	errsig := make(chan error, 1)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	decider := Decider{
-		In:           make(chan map[string]interface{}),
-		Ext:          make(chan *Alert),
-		Sem:          make(chan *amqp.Channel, env.Concurrency),
-		Wait:         &sync.WaitGroup{},
-		Pool:         pool,
-		Concurrency:  env.Concurrency,
-		Queue:        env.AlertQueue,
-		RabbitConn:   alertConn,
-		RabbitString: env.AlertString,
-		Mu:           &sync.Mutex{},
-		RedisConn:    redisConn,
-	}
-
-	decider.Decide(wg, ctx)
-
-	listen.Listen(Do(decider.In), wg, errsig, ctx)
+	listen.Listen(global.Do, wg, errsig, ctx)
+	pusher.Start(wg, ctx)
 
 	select {
 	case sig := <-sigs:
