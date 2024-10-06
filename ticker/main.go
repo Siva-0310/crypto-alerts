@@ -90,7 +90,8 @@ func main() {
 
 	env := GetEnv()
 
-	in := make(chan *producer.Tick)
+	in := make(chan *producer.Tick, 300)
+
 	p := producer.NewProducer(in, "TickMQ", "coins", env.RabbitString, "bitcoin", "ethereum", "monero", "litecoin")
 	err := p.Init(5)
 	if err != nil {
@@ -113,7 +114,7 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	p.Monitor(time.Minute, 5, errsig, wg, ctx)
+	p.Monitor(time.Second, 5, errsig, wg, ctx)
 	p.Start(wg, ctx)
 	Compressor(env.Duration, in, coins, wg, ctx)
 

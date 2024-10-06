@@ -102,11 +102,8 @@ func (p *Producer) Monitor(duration time.Duration, maxRetries int, errsig chan e
 			// Handle connection closure
 			case err := <-connChan:
 				p.mu.Lock() // Lock before modifying shared resources
-				if !err.Recover {
-					errsig <- fmt.Errorf("connection closed: %s", err.Reason)
-					p.mu.Unlock() // Unlock before returning
-					return
-				}
+
+				log.Printf("connection closed: %s\n", err.Reason)
 
 				// Delay before attempting to reconnect
 				time.Sleep(duration)
@@ -115,7 +112,7 @@ func (p *Producer) Monitor(duration time.Duration, maxRetries int, errsig chan e
 				conn, connerr := CreateRabbitMQConn(maxRetries, p.ServiceName, p.AmqpURL)
 				if connerr != nil {
 					errsig <- fmt.Errorf("failed to reconnect: %v", connerr)
-					p.mu.Unlock() // Unlock before returning
+					p.mu.Unlock()
 					return
 				}
 				p.amqpConn = conn                                            // Update the connection
@@ -125,20 +122,19 @@ func (p *Producer) Monitor(duration time.Duration, maxRetries int, errsig chan e
 				ch, cherr := p.amqpConn.Channel()
 				if cherr != nil {
 					errsig <- fmt.Errorf("failed to create new channel: %v", cherr)
-					p.mu.Unlock() // Unlock before returning
+					p.mu.Unlock()
 					return
 				}
 				p.amqpChan = ch // Update the channel
-				p.mu.Unlock()   // Unlock after modifying the connection and channel
+				chanChan = p.amqpChan.NotifyClose(make(chan *amqp091.Error))
+				p.mu.Unlock() // Unlock after modifying the connection and channel
 
 			// Handle channel closure
 			case err := <-chanChan:
-				p.mu.Lock() // Lock before modifying shared resources
-				if !err.Recover {
-					errsig <- fmt.Errorf("channel closed: %s", err.Reason)
-					p.mu.Unlock() // Unlock before returning
-					return
-				}
+				p.mu.Lock()
+				// Lock before modifying shared resources
+				log.Printf("channel closed: %s\n", err.Reason)
+
 				// Delay before attempting to recreate the channel
 				time.Sleep(duration)
 
@@ -146,17 +142,21 @@ func (p *Producer) Monitor(duration time.Duration, maxRetries int, errsig chan e
 				ch, cherr := p.amqpConn.Channel()
 				if cherr != nil {
 					errsig <- fmt.Errorf("failed to create new channel: %v", cherr)
-					p.mu.Unlock() // Unlock before returning
+					p.mu.Unlock()
 					return
 				}
 				p.amqpChan = ch // Update the channel
-				p.mu.Unlock()   // Unlock after modifying the channel
+				chanChan = p.amqpChan.NotifyClose(make(chan *amqp091.Error))
+				p.mu.Unlock() // Unlock after modifying the channel
 			}
 		}
 	}()
 }
 
 func (p *Producer) Publish(tick *Tick) {
+	if p.amqpChan != nil && p.amqpChan.IsClosed() {
+		return
+	}
 	err := p.amqpChan.Publish(
 		p.Exchange, // The exchange to publish to
 		tick.Key,   // The routing key (queue name)
@@ -182,16 +182,10 @@ func (p *Producer) Start(wg *sync.WaitGroup, ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done(): // Check if the context is done (cancellation signal)
-				close(p.In)
-				for tick := range p.In {
-					p.mu.Lock()
-					p.Publish(tick)
-					p.mu.Unlock()
-				}
 				log.Println("Producer stopped: context done")
 				return // Exit the goroutine if the context is done
-			case tick := <-p.In: // Receive messages from the input channel
-				p.mu.Lock() // Lock to ensure safe access to shared resources
+			case tick := <-p.In:
+				p.mu.Lock()
 				p.Publish(tick)
 				p.mu.Unlock() // Unlock after publishing
 			}
