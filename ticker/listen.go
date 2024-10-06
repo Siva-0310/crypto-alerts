@@ -38,10 +38,10 @@ func CreateWebSocketConn(url string, header http.Header) (*websocket.Conn, *http
 }
 
 // Listen connects to a WebSocket server and listens for incoming coin price updates.
-func Listen(url string, coins *sync.Map, wg *sync.WaitGroup, ctx context.Context, errsig chan error) (*websocket.Conn, error) {
+func Listen(url string, coins *sync.Map, wg *sync.WaitGroup, ctx context.Context, errsig chan error) error {
 	c, _, err := CreateWebSocketConn(url, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	log.Println("WebSocket listener started")
@@ -113,5 +113,5 @@ func Listen(url string, coins *sync.Map, wg *sync.WaitGroup, ctx context.Context
 		}
 	}()
 
-	return c, nil
+	return nil
 }
