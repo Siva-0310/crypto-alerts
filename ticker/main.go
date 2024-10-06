@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"ticker/producer"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -89,9 +90,11 @@ func main() {
 
 	env := GetEnv()
 
-	rabbitConn, err := CreateRabbitConn("TickMQ", env.RabbitString)
+	in := make(chan *producer.Tick)
+	p := producer.NewProducer(in, "TickMQ", "coins", env.RabbitString, "bitcoin", "ethereum", "monero", "litecoin")
+	err := p.Init(5)
 	if err != nil {
-		log.Fatalf("Failed to create RabbitMQ connection: %v", err)
+		log.Fatal(err.Error())
 	}
 
 	// Initialize the sync.Map to hold coin data
@@ -110,23 +113,27 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	// Create and start the Pusher
-	pusher := Pusher{
-		Duration:      env.Duration,
-		SenderChannel: make(chan map[string]Record),
-		Wg:            sync.WaitGroup{},
-		Concurrency:   env.Concurrency,
-		Queue:         env.Queue,
-		RabbitConn:    rabbitConn,
-		Mu:            sync.Mutex{},
-		RabbitString:  env.RabbitString,
-	}
+	p.Monitor(time.Minute, 5, errsig, wg, ctx)
+	p.Start(wg, ctx)
+	Compressor(env.Duration, in, coins, wg, ctx)
 
-	log.Println("Starting compressor")
-	pusher.StartCompressor(coins, wg, ctx)
+	// // Create and start the Pusher
+	// pusher := Pusher{
+	// 	Duration:      env.Duration,
+	// 	SenderChannel: make(chan map[string]Record),
+	// 	Wg:            sync.WaitGroup{},
+	// 	Concurrency:   env.Concurrency,
+	// 	Queue:         env.Queue,
+	// 	RabbitConn:    rabbitConn,
+	// 	Mu:            sync.Mutex{},
+	// 	RabbitString:  env.RabbitString,
+	// }
 
-	log.Println("Starting pusher")
-	pusher.StartPusher(wg, ctx)
+	// log.Println("Starting compressor")
+	// pusher.StartCompressor(coins, wg, ctx)
+
+	// log.Println("Starting pusher")
+	// pusher.StartPusher(wg, ctx)
 
 	// Wait for a signal to terminate
 	select {
