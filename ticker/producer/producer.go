@@ -50,13 +50,13 @@ func (p *Producer) Init(maxRetries int) error {
 
 	// Declare the exchange
 	err = ch.ExchangeDeclare(
-		p.Exchange,
-		amqp091.ExchangeDirect,
-		true,  // durable
-		false, // auto-delete
-		false, // internal
-		false, // no-wait
-		nil,   // arguments
+		p.Exchange, // name
+		"direct",   // type
+		true,       // durable
+		false,      // auto-deleted
+		false,      // internal
+		false,      // nowait
+		nil,        // arguments
 	)
 	if err != nil {
 		return fmt.Errorf("failed to declare exchange: %w", err)
