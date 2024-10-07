@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"dispatcher/listener"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type Env struct {
@@ -81,7 +83,8 @@ func main() {
 
 	ext := make(chan *Alert)
 
-	listen := NewListener("TickMQ", env.TickString, env.TickQueue)
+	listen := listener.NewListener("bitcoin", env.TickString, "ticks", "bitcoin")
+	listen.Init(5)
 	global := NewGlobal(1000, env.Concurrency, ext, env.PostgresString)
 	pusher := NewPusher(env.AlertQueue, env.AlertString, env.Concurrency, env.RedisString, ext)
 
@@ -89,7 +92,8 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	listen.Listen(global.Do, wg, errsig, ctx)
+	listen.Monitor(time.Duration(30*time.Second), 5, errsig, wg, ctx)
+	listen.Start(global.Do, wg, ctx)
 	pusher.Start(wg, ctx)
 
 	select {
