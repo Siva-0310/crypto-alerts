@@ -15,6 +15,7 @@ services:
   tickmq:
     image: rabbitmq:latest
     container_name: tickmq
+    hostname: tickmq
     ports:
       - "5672:5672"
     environment:
@@ -46,13 +47,15 @@ services:
     depends_on:
       - tickmq
     environment:
-      - RABBIT=amqp://user:password@tickmq
-      - QUEUE=ticks
-      - ALERT=amqp://user:password@alertmq
-      - ALERTQUEUE=alerts
-      - CONCURRENCY=5
+      - SERVICE=ticks
+      - EXCHANGE=coins
+      - WEBSOCKET_URL=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,solana,binance-coin
+      - AMQP_URL=amqp://user:password@tickmq
+      - QUEUES=bitcoin,ethereum,solana,binance-coin
+      - RETRIES=5
+      - BUFFER_SIZE=300
       - DURATION=5s
-      - WEBSOCKET=wss://ws.coincap.io/prices?assets=bitcoin,ethereum,monero,litecoin
+      - WAIT_DURATION=30s
 
   dispatcher:
     build: ./dispatcher
