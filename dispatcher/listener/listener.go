@@ -35,13 +35,13 @@ func NewListener(name string, url string, serviceName string, queue string) *Lis
 
 func (l *Listener) createDelivery(ch *amqp091.Channel) (<-chan amqp091.Delivery, error) {
 	deliveries, err := ch.Consume(
-		l.Queue,      // Queue name
-		"dispatcher", // Consumer name
-		false,        // Auto-ack
-		false,        // Exclusive
-		false,        // No-local
-		false,        // No-wait
-		nil,          // Arguments
+		l.Queue, // Queue name
+		l.Name,
+		false, // Auto-ack
+		false, // Exclusive
+		false, // No-local
+		false, // No-wait
+		nil,   // Arguments
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to declare delivery for queue %s: %w", l.Queue, err)
