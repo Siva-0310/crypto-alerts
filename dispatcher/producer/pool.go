@@ -202,11 +202,6 @@ func (p *AmqpPool) Monitor(wg *sync.WaitGroup, ctx context.Context) {
 }
 
 func (p *AmqpPool) Close(ctx context.Context) error {
-	err := p.sem.Acquire(ctx, int64(p.total))
-	if err != nil {
-		return fmt.Errorf("failed to acquire all semaphores during pool close: %w", err)
-	}
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
