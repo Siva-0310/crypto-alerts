@@ -50,6 +50,80 @@ func NewConnection(p *AmqpPool) (*Connection, error) {
 	}, nil
 }
 
+func (c *Connection) Exchange(exchange string) error {
+	// Check if the channel is closed and reopen if necessary
+	if c.ch.IsClosed() {
+		ch, err := c.conn.Channel()
+		if err != nil {
+			return fmt.Errorf("failed to create a new channel: %w", err)
+		}
+		c.ch = ch
+	}
+
+	// Declare the exchange
+	err := c.ch.ExchangeDeclare(
+		exchange,
+		"direct", // Type of the exchange (e.g., direct, fanout, topic, headers)
+		true,     // Durable
+		false,    // Auto-deleted when unused
+		false,    // Internal (true if this exchange is only for other exchanges)
+		false,    // No-wait (don't wait for the server to confirm the request)
+		nil,      // Arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare exchange %s: %w", exchange, err)
+	}
+
+	return nil
+}
+
+func (c *Connection) Bind(queue, exchange, routingKey string) error {
+	// Check if the channel is closed and reopen if necessary
+	if c.ch.IsClosed() {
+		ch, err := c.conn.Channel()
+		if err != nil {
+			return fmt.Errorf("failed to create a new channel: %w", err)
+		}
+		c.ch = ch
+	}
+
+	// Bind the queue to the exchange with the specified routing key
+	err := c.ch.QueueBind(
+		queue,      // Name of the queue
+		routingKey, // Routing key
+		exchange,   // Name of the exchange
+		false,      // No-wait
+		nil,        // Arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to bind queue %s to exchange %s with routing key %s: %w", queue, exchange, routingKey, err)
+	}
+
+	return nil
+}
+
+func (c *Connection) Queue(queue string) error {
+	if c.ch.IsClosed() {
+		ch, err := c.conn.Channel()
+		if err != nil {
+			return fmt.Errorf("failed to create a new channel: %w", err)
+		}
+		c.ch = ch
+	}
+	_, err := c.ch.QueueDeclare(
+		queue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare queue %s: %w", queue, err)
+	}
+	return nil
+}
+
 func (c *Connection) Publish(exchange, key string, body []byte) error {
 	if c.ch.IsClosed() {
 		ch, err := c.conn.Channel()
