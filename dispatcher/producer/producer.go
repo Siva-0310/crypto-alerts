@@ -2,8 +2,8 @@ package producer
 
 import (
 	"context"
+	"dispatcher/pool"
 	"encoding/json"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -19,97 +19,61 @@ type Alert struct {
 	UserID      string    `json:"user_id"`      // The user ID associated with the alert.
 }
 
-type byteAlert struct {
+type ByteAlert struct {
 	Key  string
 	data []byte
 }
 
 type Producer struct {
-	ServiceName string
-	Exchange    string
-	Queue       string
-	AmqpURL     string
-	Batch       int
-	Duration    time.Duration
-	In          chan *Alert
-	amqpPool    *AmqpPool
-	wg          *sync.WaitGroup
+	ServiceName   string
+	Exchange      string
+	Queue         string
+	AmqpURL       string
+	Batch         int
+	In            chan *Alert
+	BatchDuration time.Duration
+	amqpPool      *pool.AmqpPool
+	wg            *sync.WaitGroup
 }
 
-type PoolConfig struct {
-	ServiceName         string
-	Exchange            string
-	Queue               string
-	AmqpURL             string
-	MaxRetries          int
-	MaxConnections      int
-	MaxIdealConnections int
-	MaxIdealDuration    time.Duration
-}
-
-func NewProducer(serviceName, exchange, queue, url string, batch int, duration time.Duration) *Producer {
+func NewProducer(serviceName, exchange, queue, url string, batchSize int, batchDuration time.Duration, config *pool.Config) (*Producer, error) {
+	pool, err := pool.NewAmqpPool(config)
+	if err != nil {
+		return nil, err
+	}
 	return &Producer{
-		ServiceName: serviceName,
-		Exchange:    exchange,
-		Queue:       queue,
-		AmqpURL:     url,
-		Batch:       batch,
-		In:          make(chan *Alert, 2*batch),
-		Duration:    duration,
-		wg:          &sync.WaitGroup{},
-	}
+		amqpPool:      pool,
+		AmqpURL:       pool.AmqpURL,
+		ServiceName:   serviceName,
+		Exchange:      exchange,
+		Queue:         queue,
+		Batch:         batchSize,
+		BatchDuration: batchDuration,
+		In:            make(chan *Alert, 5*batchSize),
+		wg:            &sync.WaitGroup{},
+	}, nil
 }
 
-func (p *Producer) Init(maxRetries int) error {
-	conn, err := CreateRabbitMQConn(maxRetries, p.ServiceName, p.AmqpURL)
+func (p *Producer) Init() error {
+	conn, err := p.amqpPool.Acquire(context.Background())
 	if err != nil {
-		return fmt.Errorf("failed to create RabbitMQ connection: %w", err)
+		return err
 	}
-	defer conn.Close()
+	defer conn.Release()
 
-	ch, err := conn.Channel()
-	if err != nil {
-		return fmt.Errorf("failed to create RabbitMQ channel: %w", err)
+	if err := conn.Exchange(p.Exchange); err != nil {
+		return err
 	}
-	defer ch.Close()
-
-	err = ch.ExchangeDeclare(
-		p.Exchange, // name
-		"direct",   // type
-		true,       // durable
-		false,      // auto-deleted
-		false,      // internal
-		false,      // nowait
-		nil,        // arguments
-	)
-	if err != nil {
-		return fmt.Errorf("failed to declare exchange: %w", err)
+	if err := conn.Queue(p.Queue); err != nil {
+		return err
 	}
-
-	q, err := ch.QueueDeclare(
-		p.Queue,
-		true,  // durable
-		false, // auto-delete
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments
-	)
-	if err != nil {
-		return fmt.Errorf("failed to declare queue %s: %w", p.Queue, err)
-	}
-	if err := ch.QueueBind(q.Name, q.Name, p.Exchange, false, nil); err != nil {
-		return fmt.Errorf("failed to bind queue %s: %w", p.Queue, err)
+	if err := conn.Bind(p.Queue, p.Exchange, p.Queue); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (p *Producer) InitPool(poolConfig *PoolConfig) error {
-	pool, err := NewPool(poolConfig)
-	p.amqpPool = pool
-	return err
-}
-
-func (p *Producer) Publish(alerts []*byteAlert) error {
+func (p *Producer) Publish(alerts []*ByteAlert) error {
 	conn, err := p.amqpPool.Acquire(context.Background())
 	if err != nil {
 		return err
@@ -118,10 +82,10 @@ func (p *Producer) Publish(alerts []*byteAlert) error {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		defer p.amqpPool.Release(conn)
+		defer conn.Release()
 
 		for _, alert := range alerts {
-			err := conn.Publish(alert.Key, alert.data)
+			err := conn.Publish(p.Exchange, p.Queue, alert.data)
 			if err != nil {
 				log.Printf("Failed to publish alert with key %s: %v", alert.Key, err)
 			}
@@ -135,10 +99,10 @@ func (p *Producer) Start(errsig chan error, wg *sync.WaitGroup, ctx context.Cont
 	go func() {
 		defer wg.Done()
 
-		ticker := time.NewTicker(p.Duration)
+		ticker := time.NewTicker(p.BatchDuration)
 		defer ticker.Stop()
 
-		alerts := make([]*byteAlert, 0, p.Batch)
+		alerts := make([]*ByteAlert, 0, p.Batch)
 
 		pubFunc := func() error {
 			if len(alerts) == 0 {
@@ -173,7 +137,7 @@ func (p *Producer) Start(errsig chan error, wg *sync.WaitGroup, ctx context.Cont
 					log.Printf("Failed to marshal alert with ID %d: %v", alert.ID, err)
 					continue
 				}
-				alerts = append(alerts, &byteAlert{
+				alerts = append(alerts, &ByteAlert{
 					Key:  alert.Coin,
 					data: jsonAlert,
 				})
@@ -186,4 +150,10 @@ func (p *Producer) Start(errsig chan error, wg *sync.WaitGroup, ctx context.Cont
 			}
 		}
 	}()
+}
+
+func (p *Producer) Close() {
+	close(p.In)
+	p.wg.Wait()
+	p.amqpPool.Close()
 }
